@@ -12,14 +12,13 @@ public class SendOfflineJob extends Job {
     public static final int PRIORITY = 1;
     private String text;
     Context context;
-    Send send;
+    private Send send;
 
     public SendOfflineJob(String text) {
         // This job requires network connectivity,
         // and should be persisted in case the application exits before job is completed.
 
         super(new Params(PRIORITY).requireNetwork().persist());
-        //this.context = context;
         this.text = text;
         send = new Send();
     }
@@ -28,17 +27,15 @@ public class SendOfflineJob extends Job {
     public void onAdded() {
         // Job has been saved to disk.
         // This is a good place to dispatch a UI event to indicate the job will eventually run.
-        // In this example, it would be good to update the UI with the newly posted tweet.
-
-
+        // In this example, it would be good to update the UI with the newly data.
     }
 
     @Override
     public void onRun() throws Throwable {
-        // Job logic goes here. In this example, the network call to post to Twitter is done here.
+        // Job logic goes here. In this example, the network call to post to server is done here.
         // All work done here should be synchronous, a job is removed from the queue once
         // onRun() finishes.
-        send.send("{'data':'" + text + "', 'type':'LIVE_DATA'}");
+        send.publish("{'data':'" + text + "', 'type':'LIVE_DATA'}");
 
     }
 

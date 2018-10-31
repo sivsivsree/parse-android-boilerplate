@@ -1,230 +1,142 @@
 package com.sivsivsree.reatimeandroid;
 
+import android.Manifest;
+import android.app.ActivityManager;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.os.Handler;
-import android.support.annotation.Nullable;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.birbit.android.jobqueue.JobManager;
-import com.parse.ParseException;
-import com.parse.ParseFile;
-import com.parse.ParseObject;
-import com.parse.ParseQuery;
-import com.parse.ProgressCallback;
-import com.parse.SaveCallback;
-
-import java.io.ByteArrayOutputStream;
-import java.io.FileNotFoundException;
-import java.io.InputStream;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Timer;
+import com.sivsivsree.reatimeandroid.services.GPSService;
 
 public class MainActivity extends AppCompatActivity {
 
 
-    private static final int PICKFILE_REQUEST_CODE = 0x001;
-    int counter = 0;
-    String tripID = "TP" + System.currentTimeMillis();
-    String[] tevents = {"start", "stop", "running"};
     TextView data;
-    Button button, pick;
-    boolean activeTask = false;
-    Timer timer;
-    final Handler h = new Handler();
+    public static final int MY_PERMISSIONS_REQUEST_LOCATION = 99;
+    Button button;
     JobManager jobManager;
-    int j = 0;
-    Runnable runnable = new Runnable() {
-        private long time = 0;
-        int i = 0;
-
-        @Override
-        public void run() {
-            // do stuff then
-            // can call h again after work!
-
-            sendDataFromRabbitMQ();
-            reset();
-
-            time += 1000;
-            i++;
-            Log.d("TimerExample", "Going for... " + time);
-            h.postDelayed(this, 1000);
-        }
-    };
+    EditText topicTxt;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         setContentView(R.layout.activity_main);
         jobManager = App.getInstance().getJobManager();
         data = findViewById(R.id.data);
         button = findViewById(R.id.button);
-        pick = findViewById(R.id.pick);
-        reset();
-
-    }
-
-    public void addToOfflineQueue(View view) {
-
-        h.postDelayed(runnable, 1000); // 1 second delay (takes millis)
-
-    }
-
-    public void sendDataEventually(int i) {
+        topicTxt = findViewById(R.id.topic);
+        checkLocationPermission();
 
 
-        try {
-            List<Integer> l = Arrays.asList(getRandomInRange(-180, 180, 6).intValue(),
-                    getRandomInRange(-180, 180, 6).intValue());
-
-            ParseObject tripStream = new ParseObject("StreamEvents");
-
-            tripStream.put("TripID", tripID);
-            tripStream.put("data", i);
-//            tripStream.put("drivingHours", 0);
-//            tripStream.put("elapsedTime", 0);
-//            tripStream.put("g", "asdf");
-//            tripStream.put("km", getRandomInRange(0, 3, 10));
-//            tripStream.put("l", l);
-//            tripStream.put("speed", Math.random());
-//            tripStream.put("stopElapsedTime", 0);
-//            tripStream.put("stops", Math.floor((Math.random() * 1) + 1));
-//            tripStream.put("timestamp", System.currentTimeMillis());
-//            tripStream.put("tripEvent", tevents[(int) Math.floor(Math.random() * tevents.length)]);
-
-            tripStream.saveEventually(new SaveCallback() {
-                @Override
-                public void done(ParseException e) {
-                    if (e != null)
-                        Log.e("ERR", e.getMessage(), e);
-                    else {
-                        reset();
-                    }
-                }
-            });
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-
-    }
-
-    public void sendDataFromRabbitMQ() {
-
-        j++;
-        try {
-
-            jobManager.addJobInBackground(new SendOfflineJob(j + ""));
-            //new Thread(() -> new Send().send("{'data':'" + "hello" + "', 'type':'LIVE_DATA'}")).start();
-
-            data.setText("Sending " + j);
-
-        } catch (Exception e) {
-            e.printStackTrace();
+        if (!isMyServiceRunning(GPSService.class)) {
+            button.setText("Start Trip");
         }
 
     }
 
-    private BigDecimal getRandomInRange(int from, int to, int fixed) {
-        return new BigDecimal((Math.random() * (to - from) + from)).setScale(fixed * 1, RoundingMode.HALF_EVEN);
-    }
-
-    public void reset(View view) {
-
-        if (h != null) {
-            h.removeCallbacks(runnable);
+    public void sendDataFromRabbitMQ(View view) {
+        Intent gpsService = new Intent(this, GPSService.class);
+        if (!isMyServiceRunning(GPSService.class)) {
+            startService(gpsService);
+            button.setText("Stop Service");
+        } else {
+            Toast.makeText(this, "Service Stopped", Toast.LENGTH_SHORT).show();
+            stopService(gpsService);
+            button.setText("Start Service");
         }
 
-        tripID = "TP" + System.currentTimeMillis();
-        reset();
     }
 
-    public void reset() {
-        try {
-            counter = ParseQuery.getQuery("StreamEvents").fromLocalDatastore().count();
-        } catch (ParseException e) {
-            e.printStackTrace();
+    private boolean isMyServiceRunning(Class<?> serviceClass) {
+        ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        for (ActivityManager.RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (serviceClass.getName().equals(service.service.getClassName())) {
+                return true;
+            }
         }
-        data.setText("TripID:" + tripID + "\nLocations in queue : " + counter + "\n");
+        return false;
     }
 
+    public boolean checkLocationPermission() {
+        if (ContextCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+
+            // Should we show an explanation?
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                    Manifest.permission.ACCESS_FINE_LOCATION)) {
+
+                // Show an explanation to the user *asynchronously* -- don't block
+                // this thread waiting for the user's response! After the user
+                // sees the explanation, try again to request the permission.
+                new AlertDialog.Builder(this)
+                        .setTitle("Please the location!")
+                        .setMessage("I need location to work")
+                        .setPositiveButton("Give Permission", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialogInterface, int i) {
+                                //Prompt the user once explanation has been shown
+                                ActivityCompat.requestPermissions(MainActivity.this,
+                                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                                        MY_PERMISSIONS_REQUEST_LOCATION);
+                            }
+                        })
+                        .create()
+                        .show();
+
+
+            } else {
+                // No explanation needed, we can request the permission.
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                        MY_PERMISSIONS_REQUEST_LOCATION);
+            }
+            return false;
+        } else {
+            return true;
+        }
+    }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == PICKFILE_REQUEST_CODE) {
-            // Make sure the request was successful
+    public void onRequestPermissionsResult(int requestCode,
+                                           String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case MY_PERMISSIONS_REQUEST_LOCATION: {
+                // If request is cancelled, the result arrays are empty.
+                if (grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
 
-            if (data != null) {
-
-
-                try {
-                    InputStream inputStream = getApplicationContext().getContentResolver().openInputStream(data.getData());
-                    final Bitmap selectedImage = BitmapFactory.decodeStream(inputStream);
-                    Toast.makeText(MainActivity.this, "Uploading the file", Toast.LENGTH_SHORT).show();
-
-                    ByteArrayOutputStream stream = new ByteArrayOutputStream();
-                    selectedImage.compress(Bitmap.CompressFormat.PNG, 100, stream);
-                    byte[] byteArray = stream.toByteArray();
-                    selectedImage.recycle();
-
-                    sendImageEventually(byteArray);
-
-                } catch (FileNotFoundException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
-
-    private void sendImageEventually(byte[] byteArray) {
-        final ParseFile file = new ParseFile(System.currentTimeMillis() + ".png", byteArray);
-        reset();
-        file.saveInBackground(new SaveCallback() {
-            public void done(ParseException e) {
-                // Handle success or failure here ...
-
-                ParseObject FileUpload = new ParseObject("FileUpload");
-                FileUpload.put("Image", file);
-                FileUpload.put("ImageURL", file.getUrl());
-                FileUpload.put("TripID", tripID);
-                FileUpload.saveEventually(new SaveCallback() {
-                    @Override
-                    public void done(ParseException e) {
-                        if (e != null)
-                            Log.e("ERR", e.getMessage(), e);
-                        else {
-                            reset();
-                        }
+                    // permission was granted, yay! Do the
+                    // location-related task you need to do.
+                    if (ContextCompat.checkSelfPermission(this,
+                            Manifest.permission.ACCESS_FINE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED) {
+                        Toast.makeText(this, "Location Granted", Toast.LENGTH_SHORT).show();
                     }
-                });
+
+                } else {
+                    Toast.makeText(this, "No Location for you.", Toast.LENGTH_SHORT).show();
+                    // permission denied, boo! Disable the
+                    // functionality that depends on this permission.
+
+                }
+                return;
             }
-        }, new ProgressCallback() {
-            public void done(Integer percentDone) {
-                // Update your progress spinner here. percentDone will be between 0 and 100.
-                data.setText("TripID:" + tripID + "\nLocations in queue : " + counter + "\n" + "Uploading " + percentDone);
-            }
-        });
 
-
-    }
-
-
-    public void pickFile(View view) {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("*/*");
-        startActivityForResult(intent, PICKFILE_REQUEST_CODE);
+        }
     }
 }
 
